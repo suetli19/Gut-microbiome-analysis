@@ -1,0 +1,109 @@
+#An example of exploratory microbiome analysis for shotgun sequencing data using R language
+#In this example, our aim is to compare the microbiome profile of sick and healthy individuals 
+#The workflow: 1) Shannon diversity, 2) PCoA, 3) PERMANOVA and 4) Differential abundance analysis
+
+#required packages
+library(phyloseq)   # Facilitate the import, storage, analysis, and graphical display of microbiome census data.
+library(vegan)      # Analysis of variance using distance matrices using the adonis2 function
+library(Maaslin2)   # Determine multivariable association between metadata and microbial meta-omics features; differential abundance analysis
+library(ggplot2)    # Generate visualization plots 
+library(ggsignif)   # Visualize comparisons and the significance between two groups
+library(microbiome) # Tools for microbiome analysis
+
+
+#shotgun sequencing result is processed using biobakery workflow (MetaPhlAn) which generates species abundance table (analogous to otu table for 16S data)
+#MetaPhlAn script is not shown here but can refer to the original website (https://github.com/biobakery/MetaPhlAn)
+
+#MetaPhlAn output is saved as species.table.metaphlan which will be used for downstream phyloseq object input and analysis
+#Create a phyloseq object using species abundance table, taxonomy table and metadata
+#create matrix 
+otu.meta.mat <- as.matrix(species.table.metaphlan)
+taxa_meta.mat <- as.matrix(taxa_metaphlan)
+
+#create phyloseq input tables 
+otu.meta.mat <- otu_table(otu.meta.mat, taxa_are_rows = T)
+taxa.meta.mat <- tax_table(taxa_meta.mat)
+metadata.meta <- sample_data(metadata.metaphlan)
+
+ps.metaphlan <- phyloseq(otu.meta.mat, taxa.meta.mat, metadata.meta)
+ps.metaphlan 
+
+#save phyloseq object to local directory
+saveRDS(ps.metaphlan, 'ps.metaphlan.rds')
+
+#Ready to start analysis using the created phyloseq object
+# 1) Shannon diversity
+Shannon = estimate_richness(ps.metaphlan, measures='Shannon') 
+Shannon <- merge(Shannon, metadata.meta, by = 'row.names')      #merge Shannon result with metadata variables
+
+ggplot(Shannon, aes(x=Health_status, y=Shannon)) +              
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Shannon") +
+  labs(color='Health status') +
+  geom_signif(comparisons = list(c("Healthy", "Sick")), 
+              test = "t.test")
+ggsave("shannon.shotgun.png", width = 12, height=10)
+
+
+#2) PCoA plot 
+#remove species with abundances below 0.0001 in at least 10% of the samples
+ps.metaphlan.filt <- phyloseq::genefilter_sample(ps.metaphlan, filterfun_sample(function(x) x >= 0.0001), A = 0.1*nsamples(ps.metaphlan))
+
+ps.metaphlan.filt <- prune_taxa(ps.metaphlan.filt, ps.metaphlan)
+ps.metaphlan.filt
+
+#clr transformation
+ps.metaphlan.filt.clr <- microbiome::transform(ps.metaphlan.filt, 'clr')
+
+#generate euclidean distance and ordination
+euclidean_dist_species = phyloseq::distance(otu_table(ps.metaphlan.filt.clr), method="euclidean")
+
+ordination_euclidean_species = ordinate(ps.metaphlan.filt.clr, method = 'PCoA', distance=euclidean_dist_species)
+
+#plot
+plot_ordination(ps.metaphlan.filt.clr, ordination_euclidean_species, color="Health_status") + theme(aspect.ratio=1) +
+  ggtitle("PCoA plot based on Euclidean distance") +
+theme(plot.title = element_text(size = 12)) +
+  geom_point(size = 1.5) +
+  labs(color = 'Health status')
+ggsave("pcoa.euc.png", dpi = 300, height = 6, width = 10)
+
+
+# 3) PERMANOVA 
+# determine if there is a significant association between multiple variables and microbiome profile
+adonis2(distance(ps.metaphlan.filt.clr, method="euclidean") ~ Sex + Ethnicity + Health_status,
+        data = as(sample_data(ps.metaphlan.filt.clr), "data.frame"))
+        
+       
+# 4) Differential abundance analysis using Maaslin2
+fit_data = Maaslin2(
+  input_data = species.table.metaphlan, 
+  input_metadata = metadata.metaphlan,
+  output = "maaslin_output", 
+  fixed_effects = c("Health_status", "Ethnicity", "Sex"),
+  reference = c("Ethnicity,Chinese"),
+  random_effects = "Sequencing_Batch",
+  analysis_method = "CPLM",
+  max_significance = 0.1,
+  transform = "NONE")
+
+#view maaslin output file
+sig_maaslin <- read.csv("~/maaslin_output/significant_results.tsv", header = T, sep = '\t')  
+
+#plot to visualize significant features from maaslin output for health status variable
+sig_maaslin %>% filter(metadata=="Health_status") %>%
+  ggplot(aes(x = feature, y = coef)) +
+  geom_bar(stat = "identity", position = position_stack(), color = "white", fill = "purple") +
+  coord_flip() +
+  xlab("Species") +
+  ylab("Coefficient") +
+  facet_wrap(~value, nrow=1, labeller = label_wrap_gen(width = 5, multi_line = TRUE)) +
+  theme(strip.text.x = element_text(size = 12)) +
+  ggtitle("Species associated with health status") +
+  theme_bw() +
+  theme(text=element_text(size=14))
+
+ggsave("DA_species_health.png", width = 16, height = 12)
