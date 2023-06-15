@@ -1,1 +1,210 @@
+#Introduction
+A comparative analysis between IBD (n=53) and healthy (n=31) Singaporean individuals (N=84) using 16S rRNA sequencing. Shannon diversity, ordination, PERMANOVA and microbiome composition analysis were performed. 
+
+library(tidyverse)
+library(phyloseq)
+library(ggplot2)
+library(vegan)
+library(readxl)
+library(ggsignif)
+library(microbiome)
+library(Maaslin2) 
+library(ggsci)
+library(gridExtra)
+
+#make phyloseq object
+OTU <- otu_table(as.matrix(edge_table), taxa_are_rows = TRUE)
+TAX <- tax_table(as.matrix(taxa_table))
+samples = sample_data(metadata)
+
+ps <- phyloseq(OTU, samples, TAX)
+
+#transform to relative abundance
+psr  = transform_sample_counts(ps, function(x) x / sum(x) )
+
+otu_table(ps) <- otu_table(round(as((otu_table(ps)), "matrix")), taxa_are_rows(ps))
+
+#alpha diversity measures (Shannon, Simpson, Observed)
+Shannon = estimate_richness(ps, measures=c('Shannon', 'Simpson', 'Observed')) 
+Shannon <- merge(Shannon, metadata, by = 'row.names')
+
+
+#plot between healthy and IBD
+Shannon.plot <- ggplot(Shannon, aes(x=Health_status, y=Shannon)) + 
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Shannon") +
+  labs(color='Health status') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) + 
+  geom_signif(comparisons = list(c("Healthy", "IBD")), 
+              test = "wilcox.test", 
+              annotations = "Wilcoxon, p = 0.057") +
+  ggtitle('a) Shannon')
+
+
+Simpson.plot <- ggplot(Shannon, aes(x=Health_status, y=Simpson)) + 
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Simpson") +
+  labs(color='Health status') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) + 
+  geom_signif(comparisons = list(c("Healthy", "IBD")), 
+              test = "wilcox.test", 
+              annotations = "Wilcoxon, p = 0.016") +
+  ggtitle('b) Simpson')
+
+
+ggplot(Shannon, aes(x=Health_status, y=Observed)) + 
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Observed") +
+  labs(color='Health status') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) + 
+  geom_signif(comparisons = list(c("Healthy", "IBD")), 
+              test = "wilcox.test")
+
+# calculate pielou evenness; pielou = Shannon/Observed richness
+Shannon$Evenness <- ((Shannon$Shannon)/(Shannon$Observed))
+
+evenness.plot <- ggplot(Shannon, aes(x=Health_status, y=Evenness)) + 
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Pielou's evenness") +
+  labs(color='Health status') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) + 
+  geom_signif(comparisons = list(c("Healthy", "IBD")), 
+              test = "wilcox.test", 
+              annotations = "Wilcoxon, p = 3.3e-07") +
+  ggtitle("c) Pielou's evenness") 
+  
+  alpha.div <- grid.arrange(Shannon.plot, Simpson.plot, evenness.plot, ncol = 2)
+print(alpha.div)
+
+ggsave('alpha.div.png', alpha.div, width=12, height=10, units = "in")
+
+# plot between healthy and IBD subcategories
+Shannon$Disease_category <- factor(Shannon$Disease_category, levels = c("Healthy", "UC", "CD"))
+
+shannon.plot2 <- Shannon %>%
+  ggplot(aes(x = factor(Disease_category, level = c("Healthy", "UC", "CD")), y = Shannon)) + 
+  geom_boxplot(aes(color = Disease_category)) + 
+  geom_jitter(aes(color = Disease_category), size =0.9) +
+  theme_bw() +
+  xlab("Disease category") +
+  ylab("Shannon") +
+  labs(color='Disease category') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "UC" = "orange", "CD" = "blue")) +
+  geom_signif(comparisons = list(c("Healthy", "UC"),
+                                 c("Healthy", "CD"),
+                                 c("UC", "CD")), 
+              test = "wilcox.test", 
+              step_increase = 0.075, map_signif_level = TRUE) +
+  ggtitle("a) Shannon")
+
+
+simpson.plot2 <- Shannon %>%
+  ggplot(aes(x = factor(Disease_category, level = c("Healthy", "UC", "CD")), y = Shannon)) + 
+  geom_boxplot(aes(color = Disease_category)) + 
+  geom_jitter(aes(color = Disease_category), size =0.9) +
+  theme_bw() +
+  xlab("Disease category") +
+  ylab("Simpson") +
+  labs(color='Disease category') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "UC" = "orange", "CD" = "blue")) +
+  geom_signif(comparisons = list(c("Healthy", "UC"),
+                                 c("Healthy", "CD"),
+                                 c("UC", "CD")), 
+              test = "wilcox.test", 
+              step_increase = 0.075, map_signif_level = TRUE) +
+  ggtitle("b) Simpson")
+
+
+evenness.plot2 <- Shannon %>%
+  ggplot(aes(x = factor(Disease_category, level = c("Healthy", "UC", "CD")), y = Shannon)) + 
+  geom_boxplot(aes(color = Disease_category)) + 
+  geom_jitter(aes(color = Disease_category), size =0.9) +
+  theme_bw() +
+  xlab("Disease category") +
+  ylab("Pielou's evenness") +
+  labs(color='Disease category') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "UC" = "orange", "CD" = "blue")) +
+  geom_signif(comparisons = list(c("Healthy", "UC"),
+                                 c("Healthy", "CD"),
+                                 c("UC", "CD")), 
+              test = "wilcox.test", 
+              step_increase = 0.075, map_signif_level = TRUE) +
+  ggtitle("c) Pielou's evenness")
+
+
+alpha.div2 <- grid.arrange(shannon.plot2, simpson.plot2, evenness.plot2, ncol = 2)
+print(alpha.div2)
+
+ggsave('alpha.div2.png', alpha.div2, width=12, height=10, units = "in") 
+
+
+#remove taxa with abundances less than 0.0005 in at least 5% of the samples
+psr.filt <- phyloseq::genefilter_sample(psr, filterfun_sample(function(x) x >= 0.0005), A = 0.05*nsamples(psr))
+
+psr.filt <- prune_taxa(psr.filt, psr)
+psr.filt
+  
+#clr transformation
+psr.filt.clr <- microbiome::transform(psr.filt, 'clr')
+
+#generate euclidean distance and ordination
+euc_dist = phyloseq::distance(otu_table(psr.filt.clr), method="euclidean")
+
+ord_euc = ordinate(psr.filt.clr, method = 'PCoA', distance=euc_dist)
+
+#plot
+plot_ordination(psr.filt.clr, ord_euc, color="Health_status") +  
+  theme(aspect.ratio=1) +
+  ggtitle("PCoA plot based on Euclidean distance of healthy and IBD individuals") +
+  theme(plot.title = element_text(size = 13)) +
+  geom_point(size = 1.5) +
+  labs(color = 'Health status') + 
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) +
+  theme_bw()
+  
+  ord <- plot_ordination(psr.filt.clr, ord_euc, color="Disease_category") +     
+  theme(aspect.ratio=1) +
+  ggtitle("PCoA plot based on Euclidean distance of healthy and different IBD subcategories") +
+  theme(plot.title = element_text(size = 13)) +
+  geom_point(size = 2) +
+  labs(color = 'Disease category') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "UC" = "orange", "CD" = "blue")) +
+  theme_bw()
+
+
+ord$data$Disease_category <- factor(ord$data$Disease_category, levels = c("Healthy", "UC", "CD"))
+
+plot_ordination(psr.filt.clr, ord_euc, color="Disease_category") +     
+  theme(aspect.ratio=1) +
+  ggtitle("PCoA plot based on Euclidean distance of healthy and different IBD subcategories") +
+  theme(plot.title = element_text(size = 13)) +
+  geom_point(size = 2) +
+  labs(color = 'Disease category') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "UC" = "orange", "CD" = "blue")) +
+  theme_bw()
+  
+  
+#permanova
+set.seed(123)
+adonis2(distance(psr.filt.clr, method="euclidean") ~ Gender + Age + Race + Health_status,
+       data = as(sample_data(psr.filt.clr), "data.frame"))
+       
+       
+ 
+
+  
+  
+
 
