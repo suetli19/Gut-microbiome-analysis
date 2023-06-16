@@ -1,1 +1,183 @@
+#load libraries
+library(phyloseq)
+library(tidyverse)
+library(ggplot2)
+library(Maaslin2)
+library(vegan)
+library(ggsci)
+library(microbiomeMarker)
+library(ggsignif)
+library(gridExtra)
+
+#phyloseq
+OTU <- otu_table(as.matrix(pathway_iletis), taxa_are_rows = TRUE)
+TAX <- tax_table(as.matrix(taxa))
+samples = sample_data(metadata_iletis)
+
+ps.pathway <- phyloseq(OTU, TAX, samples)
+
+#transform to relative abundance
+psr.pathway  = transform_sample_counts(ps.pathway, function(x) x / sum(x) )
+psr.pathway
+
+#alpha diversity  (Shannon, Simpson, Observed)
+# change abundance to integer/count
+otu_table(ps.pathway) <- otu_table(round(as((otu_table(ps.pathway)), "matrix")), taxa_are_rows(ps.pathway))
+
+Shannon = estimate_richness(ps.pathway, measures= c('Shannon', 'Simpson', 'Observed'))
+
+Shannon <- merge(Shannon, samples, by = 'row.names')
+
+
+#plot between healthy and IBD
+Shannon.plot <- ggplot(Shannon, aes(x=Health_status, y=Shannon)) + 
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Shannon") +
+  labs(color='Health status') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) + 
+  geom_signif(comparisons = list(c("Healthy", "IBD")), 
+              test = "wilcox.test", 
+              map_signif_level = F,
+              annotations = "Wilcoxon, p = 1.8e-05") +
+  ggtitle('a) Shannon')
+
+
+Simpson.plot <- ggplot(Shannon, aes(x=Health_status, y=Simpson)) + 
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Simpson") +
+  labs(color='Health status') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) + 
+  geom_signif(comparisons = list(c("Healthy", "IBD")), 
+              test = "wilcox.test", 
+              map_signif_level = F,
+              annotations = "Wilcoxon, p = 0.0016") +
+  ggtitle('b) Simpson')
+  
+  
+  ##pielou evenness = Shannon/Observed richness
+Shannon$Evenness <- ((Shannon$Shannon)/(Shannon$Observed))
+
+evenness.plot <- ggplot(Shannon, aes(x=Health_status, y=Evenness)) + 
+  geom_boxplot(aes(color = Health_status)) + 
+  geom_jitter(aes(color = Health_status), size =0.9) +
+  theme_bw() +
+  xlab("Health status") +
+  ylab("Pielou's evenness") +
+  labs(color='Health status') +
+  scale_color_manual(values = c("Healthy" = "darkgreen", "IBD" = "red")) + 
+  geom_signif(comparisons = list(c("Healthy", "IBD")), 
+              test = "wilcox.test", 
+              map_signif_level = F,
+              annotations = "Wilcoxon, p = 0.0042") +
+  ggtitle("c) Pielou's evenness") 
+  
+  
+  alpha.div <- grid.arrange(Shannon.plot, Simpson.plot, evenness.plot, ncol = 2)
+print(alpha.div)
+
+ggsave('alpha.div.png', alpha.div, width=12, height=10, units = "in") 
+
+colors <- c(Healthy = "Darkgreen", IBD = "Red")
+
+#filter
+psr.pathway.filt <- phyloseq::genefilter_sample(psr.pathway, filterfun_sample(function(x) x >= 0.005), A = 0.01*nsamples(psr.pathway))
+
+psr.pathway.filt <- prune_taxa(psr.pathway.filt, psr.pathway)
+psr.pathway.filt
+
+#clr transformation
+psr.pathway.filt.clr <- microbiome::transform(psr.pathway.filt, 'clr')
+
+#generate euclidean distance and ordination
+euc_dist = phyloseq::distance(otu_table(psr.pathway.filt.clr), method="euclidean")
+
+ord_euc = ordinate(psr.pathway.filt.clr, method = 'PCoA', distance=euc_dist)
+
+#plot
+plot_ordination(psr.pathway.filt.clr, ord_euc, color="Health_status") +  
+  theme(aspect.ratio=1) +
+  ggtitle("PCoA plot based on Euclidean distance of healthy and IBD individuals") +
+  theme(plot.title = element_text(size = 13)) +
+  geom_point(size = 2) +
+  scale_color_manual(values = colors) +
+  labs(color = 'Health status') + 
+  theme_bw()
+  
+  #adonis
+set.seed(123)
+
+adonis.pathway <- adonis2(distance(psr.pathway.filt.clr, method="euclidean") ~ Gender + Age + Race + Health_status, 
+       data = as(sample_data(psr.pathway.filt.clr), "data.frame"), na.action = na.omit)
+
+adonis.pathway
+
+
+#maaslin2
+pathway_iletis_filt <- as(otu_table(psr.pathway.filt), 'matrix') %>% as.data.frame()
+
+fit_data = Maaslin2(input_data = pathway_iletis_filt, 
+                    input_metadata = metadata_iletis,
+                    output         = "maaslin_pathway", 
+                    fixed_effects  = c("Health_status"))
+                    
+ 
+maaslin_pathway <- read.csv("./maaslin_pathway/significant_results.tsv", header = T, sep = '\t') %>%
+  mutate(Health_status = ifelse(coef > 0, "IBD", "Healthy")) %>%
+  filter(pval < 0.05)
+  
+
+maaslin_pathway %>%
+ggplot(aes(x = reorder(feature, -coef), y = coef, fill = Health_status)) +
+  geom_bar(stat = "identity", position = position_stack()) +
+  coord_flip() +
+  xlab("Pathway") +
+  ylab("Coefficient") +
+  theme(strip.text.x = element_text(size = 12)) +
+  ggtitle("Differentially abundant pathways between healthy and IBD") +
+  theme_bw() +
+  theme(text=element_text(size=11)) +
+  scale_fill_manual(values = colors)
+  
+  
+#lefse
+set.seed(123)
+lefse_pathway <- run_lefse(psr.pathway.filt,
+        wilcoxon_cutoff = 0.01,
+        norm = "CPM",
+        group = "Health_status",
+        kw_cutoff = 0.01,
+        multigrp_strat = TRUE,
+        lda_cutoff = 2, 
+        taxa_rank = "none"
+    )
+    
+lefse_pathway
+
+pathway_lefse <- as(marker_table(lefse_pathway), 'matrix') %>% as.data.frame()
+
+#boxplot
+plot_abundance(lefse_pathway, group = "Health_status") +
+  theme(text = element_text(size = 16)) +
+  scale_fill_manual(values = colors)
+  
+#heatmap
+plot_heatmap(lefse_pathway, transform = "log10p", group = "Health_status")
+
+
+#barplot
+plot_ef_bar(lefse_pathway) + 
+  theme(text = element_text(size = 16)) +
+  scale_fill_manual(values = colors)
+  
+  
+
+
+
+
 
