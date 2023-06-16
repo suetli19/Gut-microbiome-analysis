@@ -1,1 +1,132 @@
+#LEfSe (Linear discriminant analysis Effect Size) determines the features (organisms, clades, operational taxonomic units, genes, or functions) most likely to explain differences between classes by coupling standard tests for statistical significance with additional tests encoding biological consistency and effect relevance (https://huttenhower.sph.harvard.edu/lefse/)
 
+# For our LEfSe analysis, we use the microbiomeMarker package, a unified toolbox in R for microbiome biomarker discovery by integrating existing widely used differential analysis methods. (https://github.com/yiluheihei/microbiomeMarker)
+
+# This analysis aims to determine the taxa biomarkers which discriminate between IBD and healthy subjects in a Singaporean dataset. 
+
+#load libraries
+library(microbiomeMarker)
+library(phyloseq)
+library(ggplot2)
+library(tidyverse)
+
+### 1. Healthy vs CD (repeat the same script but replace "CD" with "UC" for # 2. Healthy vs UC)
+
+# a. Genus level
+set.seed(123)
+lefse_ibd_pairwise <- phyloseq::subset_samples(psr.filt.lefse,
+    Disease_category %in% c("Healthy", "CD")) %>%
+  run_lefse(
+        wilcoxon_cutoff = 0.01,
+        norm = "CPM",
+        group = "Disease_category",
+        kw_cutoff = 0.01,
+        multigrp_strat = TRUE,
+        lda_cutoff = 3, 
+        taxa_rank = "Genus")
+        
+  lefse_ibd_pairwise
+  
+  
+  # b. Species level
+  set.seed(123)
+lefse_ibd_pairwise_species <- phyloseq::subset_samples(psr.filt.lefse,
+    Disease_category %in% c("Healthy", "CD")) %>%
+  run_lefse(
+        wilcoxon_cutoff = 0.01,
+        norm = "CPM",
+        group = "Disease_category",
+        kw_cutoff = 0.01,
+        multigrp_strat = TRUE,
+        lda_cutoff = 3, 
+        taxa_rank = "Species")
+        
+        
+ lefse_ibd_pairwise_species
+   
+   
+ colors_cd <- c(Healthy = "Darkgreen", CD = "Blue")
+ 
+# boxplot
+p_abd_cd <- plot_abundance(lefse_ibd_pairwise, group = "Disease_category") +
+  theme(text = element_text(size = 16)) +
+  scale_fill_manual(values = colors_cd)
+
+p_abd_cd
+
+p_abd_cd_species <- plot_abundance(lefse_ibd_pairwise_species, group = "Disease_category") +
+  theme(text = element_text(size = 16)) +
+  scale_fill_manual(values = colors_cd)
+p_abd_cd_species
+
+
+#heatmap
+plot_heatmap(lefse_ibd_pairwise, transform = "log10p", group = "Disease_category")
+
+plot_heatmap(lefse_ibd_pairwise_species, transform = "log10p", group = "Disease_category")
+
+#barplot
+plot_ef_bar(lefse_ibd_pairwise) + 
+  theme(text = element_text(size = 16)) +
+  scale_fill_manual(values = colors_cd)
+  
+plot_ef_bar(lefse_ibd_pairwise_species) +
+  theme(text = element_text(size = 16)) +
+  scale_fill_manual(values = colors_cd)
+  
+  
+#dotplot
+plot_ef_dot(lefse_ibd_pairwise)
+
+plot_ef_dot(lefse_ibd_pairwise_species)
+
+#create function for cladogram
+my_tax_glom <- function(psr.filt.lefse, level = "Genus"){
+  cols <-  colnames(tax_table(psr.filt.lefse))
+  remove_cols <- cols[seq(from = which(level == cols)+1, to = length(cols))]
+  prep <- tax_glom(psr.filt.lefse, level) 
+  tax_table(prep) <- tax_table(prep) %>% data.frame %>% as.matrix 
+  return(prep)
+}
+
+lefse_ibd_pairwise_glom <- my_tax_glom(psr.filt.lefse, "Genus") %>% phyloseq::subset_samples(
+    Disease_category %in% c("Healthy", "CD")) %>%
+  run_lefse(
+        wilcoxon_cutoff = 0.01,
+        norm = "CPM",
+        group = "Disease_category",
+        kw_cutoff = 0.01,
+        multigrp_strat = TRUE,
+        lda_cutoff = 3
+    )
+    
+ 
+plot_cladogram(lefse_ibd_pairwise_glom, color = c(Healthy = "darkgreen", CD = "blue")) + 
+  theme(text = element_text(size = 16)) 
+  
+  
+lefse_ibd_pairwise_glom_species <- 
+  phyloseq::subset_samples(psr.filt.lefse, 
+    Disease_category %in% c("Healthy", "CD")) %>% 
+  run_lefse(
+        wilcoxon_cutoff = 0.01,
+        norm = "CPM",
+        group = "Disease_category",
+        kw_cutoff = 0.01,
+        multigrp_strat = TRUE,
+        lda_cutoff = 4, 
+        taxa_rank = "all"
+    )  
+    
+    
+plot_cladogram(lefse_ibd_pairwise_glom_species, color = c(Healthy = "darkgreen", CD = "blue")) + 
+  theme(text = element_text(size = 14))  
+  
+  
+    
+  
+ 
+ 
+
+ 
+  
