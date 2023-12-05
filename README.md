@@ -1,7 +1,7 @@
 Workflow of microbiome analysis using shotgun sequencing data. 
 This script shows an example of the standard workflow for microbiome analysis (standard workflow for both Shotgun and 16S sequencing data): 
 1. Alpha diversity
-2. Beta diversity (e.g. Ordination; PCoA plot; Euclidean distance)
+2. Beta diversity (e.g. Ordination; PCoA plot; Aitchison distance)
 3. PERMANOVA
 4. Differential abundant analysis (e.g. Maaslin2, LEfSe, DESeq2, ANCOMBC, etc.)
 
