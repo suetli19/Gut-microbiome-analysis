@@ -1,0 +1,28 @@
+Aim: To generate demography figures at once - both categorical and numerical data
+
+#demographic summary
+
+#load libraries
+library(rstatix)
+library(ggpubr)
+library(funModeling) 
+library(tidyverse) 
+library(Hmisc)
+
+#example input dataset
+psr.filt <- readRDS("~/AMILI_2022/hpc2_projects/vsl3_analysis/ILETIS_NEW_020823/psr.filt.rds")
+metadata163 <- as(sample_data(psr.filt), 'data.frame')
+
+freq(metadata163, path_out = "./demographics") 
+
+plot_num(metadata163, path_out = "./demographics") 
+
+
+#mean and sd statistics can ve generated using 'get_summary_stats' function 
+#in the below code, I only want to look at the summary statistics for "CD" patients, therefore, I filtered to "CD" from the "Disease_category" column and then, get the mean/SD and followed by percentage calculation for the samples in this category. The continuation of the codes were done using "pipe (%>%)" function in R.
+
+metadata163 %>%
+  filter(Disease_category %in% "CD") %>%
+  get_summary_stats(., type="mean_sd") %>%
+  mutate(percentage = (n*100)/ sum(n))
+
